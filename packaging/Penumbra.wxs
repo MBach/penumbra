@@ -1,0 +1,92 @@
+<!--
+  Penumbra MSI (WiX 5): installs for all users in C:\Program Files\Penumbra,
+  with a Start menu shortcut and an entry in Programs and Features.
+  Built by build-msi.cmd; the version comes from the exe (src/penumbra.rc).
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+    Name="Penumbra"
+    Manufacturer="Matthieu BACHELIER"
+    Version="!(bind.FileVersion.PenumbraExe)"
+    UpgradeCode="DB9E519B-EDA7-48DA-B355-D86FAA1BAABF"
+    Scope="perMachine"
+    Compressed="yes">
+
+    <!-- A newer (or rebuilt same-version) MSI replaces the installed one. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes"
+                  DowngradeErrorMessage="A newer version of Penumbra is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Programs and Features: icon, link, no "Change" button. -->
+    <Icon Id="PenumbraIcon" SourceFile="src\penumbra.ico" />
+    <Property Id="ARPPRODUCTICON" Value="PenumbraIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/MBach/penumbra" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <!--
+      GdiIcmGammaRange is read at Windows startup: if it was not already set,
+      offer Windows' standard restart prompt at the end of the install.
+      A raw DWORD reads as "#256". GAMMARANGEOWNED: a previous Penumbra
+      install created it (see the GammaRange component).
+    -->
+    <Property Id="GAMMARANGE">
+      <RegistrySearch Id="GammaRangeSearch" Root="HKLM" Bitness="always64"
+                      Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion\ICM"
+                      Name="GdiIcmGammaRange" Type="raw" />
+    </Property>
+    <Property Id="GAMMARANGEOWNED">
+      <RegistrySearch Id="GammaRangeOwnedSearch" Root="HKLM" Bitness="always64"
+                      Key="SOFTWARE\Penumbra" Name="GammaRangeOwned" Type="raw" />
+    </Property>
+    <InstallExecuteSequence>
+      <ScheduleReboot After="InstallFinalize"
+                      Condition="NOT REMOVE AND GAMMARANGE &lt;&gt; &quot;#256&quot;" />
+    </InstallExecuteSequence>
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="Penumbra">
+        <Component Id="PenumbraExe">
+          <File Id="PenumbraExe" Source="build\Penumbra.exe" KeyPath="yes" />
+        </Component>
+
+        <!--
+          Start menu shortcut (all users) and the per-user entries of the user
+          who installs. Windows Installer wants a shortcut keyed on an HKCU
+          value. The app writes its startup entry and settings under HKCU; this
+          component lets the uninstall remove them instead of leaving a startup
+          entry to a missing exe. ("Start with Windows" is on by default, so
+          the entry is written here too; other users get theirs when they
+          first launch Penumbra.)
+        -->
+        <Component Id="ShortcutAndUserEntries" Guid="FAE74CD3-2922-4277-BB59-EF2DFAB9B4EE">
+          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="Penumbra"
+                    Description="A lean screen dimmer" Target="[#PenumbraExe]"
+                    WorkingDirectory="INSTALLFOLDER" />
+          <RegistryValue Root="HKCU" Key="Software\Penumbra" Name="Installed" Type="integer"
+                         Value="1" KeyPath="yes" />
+          <RegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                         Name="Penumbra" Type="string"
+                         Value="&quot;[INSTALLFOLDER]Penumbra.exe&quot; /startup" />
+          <RemoveRegistryKey Root="HKCU" Key="Software\Penumbra" Action="removeOnUninstall" />
+        </Component>
+
+        <!--
+          Lets the gamma ramp dim below 50 % (Windows refuses lower tables
+          otherwise); read at startup, so it takes effect after a restart.
+          Installed only when Penumbra creates the value (or created it in a
+          previous install, kept through upgrades by the marker), so the
+          uninstall removes it then, and leaves it alone when another tool
+          or the user had set it.
+        -->
+        <Component Id="GammaRange"
+                   Condition="GAMMARANGE &lt;&gt; &quot;#256&quot; OR GAMMARANGEOWNED">
+          <RegistryValue Root="HKLM" Key="SOFTWARE\Penumbra" Name="GammaRangeOwned"
+                         Type="integer" Value="1" KeyPath="yes" />
+          <RegistryValue Root="HKLM" Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion\ICM"
+                         Name="GdiIcmGammaRange" Type="integer" Value="256" />
+          <RemoveRegistryKey Root="HKLM" Key="SOFTWARE\Penumbra" Action="removeOnUninstall" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+  </Package>
+</Wix>
